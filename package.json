@@ -1,0 +1,40 @@
+{
+  "name": "trellisfw-lib-ibmfoodtrust",
+  "version": "0.0.1",
+  "main": "src/ift.js",
+  "scripts": {
+    "start": "node src/index.js"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/trellisfw/trellisfw-lib-ibmfoodtrust.git"
+  },
+  "keywords": [
+    "trellisfw",
+    "oada",
+    "food",
+    "safety",
+    "food",
+    "safety",
+    "audit",
+    "hyperledger",
+    "ibm",
+    "trust"
+  ],
+  "author": "Servio Palacios",
+  "bugs": {
+    "url": "https://github.com/trellisfw/trellisfw-lib-ibmfoodtrust/issues"
+  },
+  "homepage": "https://github.com/trellisfw/trellisfw-lib-ibmfoodtrust#readme",
+  "license": "Apache-2.0",
+  "dependencies": {
+    "axios": "^0.18.0",
+    "bluebird": "^3.5.2",
+    "debug": "^4.0.1",
+    "fs": "0.0.1-security",
+    "lodash": "^4.17.11",
+    "moment": "^2.22.2",
+    "prettyjson": "^1.2.1"
+  },
+  "description": "Trellisfw - IBM Food Trust Javascript API"
+}
