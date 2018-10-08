@@ -1,6 +1,6 @@
 {
   "name": "trellisfw-lib-ibmfoodtrust",
-  "version": "0.0.1",
+  "version": "0.0.2",
   "main": "src/ift.js",
   "scripts": {
     "start": "node src/index.js"
@@ -30,11 +30,9 @@
   "dependencies": {
     "axios": "^0.18.0",
     "bluebird": "^3.5.2",
-    "debug": "^4.0.1",
-    "fs": "0.0.1-security",
+    "debug": "^4.1.0",
     "lodash": "^4.17.11",
-    "moment": "^2.22.2",
-    "prettyjson": "^1.2.1"
+    "moment": "^2.22.2"
   },
   "description": "Trellisfw - IBM Food Trust Javascript API"
 }

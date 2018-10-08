@@ -1,38 +1,59 @@
 # trellisfw-ift
+
 Trellisfw - IBM Food Trust Javascript API.
 
-
 ## Connecting to the **IBM Food Trust**
-```js
-const IFT = require("trellisfw-ift");
 
-let _IFT = new IFT({
-  organization_id: "",
-  apiKey: ""
+```js
+const primusgfs = require("./templates/primusgfs");
+const IFT = require("trellisfw-lib-ibmfoodtrust");
+const debug = require("debug")("trellisfw-lib-ibmfoodtrust:index");
+
+let ift = new IFT({
+  organization_id: "OrganizationIdGoesHere",
+  apiKey: "apiKeyGoesHere"
 });
 
 /**
  * connecting to IFT framework
  * retriving a certificate to the IFT
  */
-_IFT.connect().then(response => {
-  _IFT.getCertificateManager("e623ec02f73ce20428201045b1f68df5");
-});
-
+return ift
+  .getCertificate("certificateid")
+  .then(response => {
+    debug("[FETCHED]", response);
+  })
+  .catch(err => {
+    debug("Error: Failed to getCertificate() to hyperledger.", err);
+  });
 ```
 
 ## Creating a new Certificate in the **IBM Food Trust (IFT)**:
+
 ```js
 const IFT = require("trellisfw-ift");
 
-let _IFT = new IFT({
-  organization_id: "",
-  apiKey: ""
+const certificationId = someCerticationId;
+
+let ift = new IFT({
+  organization_id: "OrganizationIdGoesHere",
+  apiKey: "apiKeyGoesHere"
 });
 
-_IFT.connect().then(response => {
-  _IFT.putCertificate(_audit, _certificate).then(response => {
-    console.log(response);
-});
+return ift
+  .putCertificate(audit, certificate)
+  .then(hyperledgerId => {
+    debug(
+      certificationId,
+      "Successfully pushed to hyperledger. hyperledger_id:",
+      hyperledgerId
+    );
+  })
+  .catch(err => {
+    debug(
+      certificationId,
+      "Error: Failed to putCertificate() to hyperledger.",
+      err
+    );
+  });
 ```
-

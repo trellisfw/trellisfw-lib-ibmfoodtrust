@@ -16,15 +16,16 @@
  */
 
 /**
- * @author Servio Palacios
+ * @author Servio Palacios, Cyrus, and Sam
  * REST API for IBM Food Trust (IFT) - Super Class.
  * @module src/ift/rest
  */
 
 const axios = require("axios");
-const pretty = require("prettyjson");
-const fs = require("fs");
 const moment = require("moment");
+const _ = require("lodash");
+const debug = require("debug")("trellisfw-lib-ibmfoodtrust:rest");
+const config = require("./config.js");
 
 class REST {
   constructor(param = {}) {
@@ -126,32 +127,46 @@ class REST {
   }
 
   /**
-   * maps the prmusgfs format to IFT data model
-   * include the trellis resource id in the primusgfs
-   * "trellis://<domain>/resources/<id>"
-   * @param {*} _primusgfs
+   * maps the primusgfs format to IFT data model
+   * @param {*} _audit primusgfs format
+   * @param {*} _certificate primusgfs format
    */
   _mapOada2Hyperledger(_audit, _certificate) {
     let self = this;
     let gln = [];
+    /* required field (*) */
     self._certificate_template.addendumsComments = _audit._id;
     self._certificate_template.auditStartDate = self._compareDates(
+      //(*)
       _audit.conditions_during_audit.FSMS_observed_date,
       _audit.conditions_during_audit.operation_observed_date
     );
-    self._certificate_template.auditedBy = _audit.certifying_body.auditor.name;
+    //self._certificate_template.auditType = ""; //_audit.scheme.name + " " + _audit.scheme.version;
+    self._certificate_template.auditedBy = _audit.certifying_body.auditor.name; //(*)
     self._certificate_template.certificateReferenceNumber =
-      _audit.certificationid.id;
-    self._certificate_template.certificationStatus = "valid"; 
-    self._certificate_template.scheme = _audit.scheme.name;
+      _audit.certificationid.id; //(*)
+    self._certificate_template.certificationStatus = "valid";
+    self._certificate_template.scheme = _audit.scheme.name; //(*)
     self._certificate_template.schemeOwner = _audit.scheme.name;
-    self._certificate_template.scope = self._getScopeDescription(_audit.scope);
-    gln.push(
-      _certificate.organization.gln
-        ? _certificate.organization.gln
-        : _audit.organization.gln
-    );
-    self._certificate_template.locationGLNList = gln;
+    self._certificate_template.scope = self._getScopeDescription(_audit.scope); //(*)
+
+    if (_.get(config, "debug.overrideGLN")) {
+      //(*)
+      gln.push(self._location_prefix + _.get(config, "debug.overrideGLN"));
+    } else {
+      gln.push(
+        _certificate.organization.GLN
+          ? self._location_prefix + _certificate.organization.GLN
+          : self._location_prefix + _audit.organization.GLN
+      );
+    }
+    self._certificate_template.locationGLNList = gln; //(*)
+
+    /* customFieldList */
+    self._certificate_template.customFieldList[0].value = _certificate._meta
+      .analytics_url
+      ? _certificate._meta.analytics_url
+      : self._certificate_template.customFieldList[0].value;
 
     return self._certificate_template;
   } //_mapOada2Hyperledger
@@ -169,39 +184,8 @@ class REST {
         self._IAM_TOKEN[key] = tempToken[key];
       }
     });
-    console.log("--> [IBM_AIM_TOKEN] --> ", pretty.render(self._IAM_TOKEN));
+    debug("Received [IBM_AIM_TOKEN]");
   } //_getIAMTokenFromResponse
-
-  /**
-   * prints the onboarding token to console
-   */
-  _printOnboardingToken() {
-    let self = this;
-    console.log("[ONBOARDING_TOKEN]", pretty.render(self._ONBOARDING_TOKEN));
-  }
-
-  /**
-   * reads the onboarding token from file if present
-   */
-  async _readOnboardingTokenFromFile() {
-    let self = this;
-    self._result = false;
-    fs.readFile(self._onboarding_file_name, "utf8", function readFileCallback(
-      err,
-      data
-    ) {
-      if (err) {
-        console.log("[Error] - [reading from file]", err);
-      } else {
-        self._ONBOARDING_TOKEN = JSON.parse(data);
-        console.log("[ONBOARDING_TOKEN] - [EXISTS] - [reading from file]");
-        self._printOnboardingToken();
-        self._result = true;
-      }
-    });
-    // console.log('reading file-->', self._result);
-    return await self._result;
-  } //_readOnboardingTokenFromFile
 
   /**
    * connects to the IFT frawework
@@ -211,14 +195,13 @@ class REST {
    */
   async connect() {
     let self = this;
-
-    if (!(await self._readOnboardingTokenFromFile())) {
+    if (!self._ONBOARDING_TOKEN) {
       /* getting IBM Cloud IAM token */
+      debug("[CONNECTING...]");
       return self
         .post(self._iam_path, self._iam_header, self._iam_body)
         .then(response => {
           self._getIAMTokenFromResponse(response.data);
-
           /* getting onboarding token */
           return self
             .post(
@@ -228,49 +211,69 @@ class REST {
               self._IAM_TOKEN
             )
             .then(response => {
+              debug("Received [ONBOARDING_TOKEN]");
               self._ONBOARDING_TOKEN = response.data;
-              self._connected = true;
-              console.log("[CONNECTED]");
-              fs.writeFile(
-                self._onboarding_file_name,
-                JSON.stringify(self._ONBOARDING_TOKEN),
-                response => {
-                  console.log("File written");
-                }
-              );
-              //self._printOnboardingToken();
+              self._buildCertificatesHeader();
+              debug("[CONNECTED]");
             })
             .catch(error => {
-              console.log("[ERROR] - [ONBOARDING TOKEN]", error);
+              debug("[ERROR] - [ONBOARDING TOKEN]", error);
+              throw error;
             });
         })
         .catch(error => {
-          console.log("[ERROR] - [IAM TOKEN]", error);
+          debug("[ERROR] - [IAM TOKEN]", error);
           return null;
         });
     } else {
-      console.log("[ALREADY CONNECTED]");
-      //this._printOnboardingToken();
-      self._connected = true;
-
-      return Promise.resolve("Connected");
+      debug("[ALREADY CONNECTED]");
+      return "Connected";
     } //else
   } //connect
+
+  clearToken() {
+    this._ONBOARDING_TOKEN = null;
+  }
+
+  /**
+   * handles the case when token has expired
+   * otherwise throws error
+   * @param {*} error
+   */
+  handleHTTPError(error) {
+    if (_.get(error, "response.status") == 401) {
+      //User Unauthorized: Invalid token provided
+      //Get a new token
+      debug("ONBOARDING_TOKEN EXPIRED");
+      this.clearToken();
+      return this.connect();
+    }
+    throw error;
+  }
 
   /**
    * GET request to IFT
    * @param {*} _path
    * @param {*} _headers
    */
-  get(_path, _headers) {
-    let self = this;
-
+  get(_path, _headers, _retries) {
     return axios({
       method: "get",
-      url: _path || self._path,
+      url: _path,
       headers: _headers || ""
     }).catch(err => {
-      console.log("[GET ERROR] ->", err);
+      return this.handleHTTPError(err)
+        .then(() => {
+          //Error was handled, retry.
+          _retries = _retries == null ? 1 : _retries + 1;
+          if (_retries > 3) throw err;
+          debug("Error handled during GET retrying... attempt #" + _retries);
+          return this.get.call(this, _path, _headers, _retries);
+        })
+        .catch(err => {
+          debug("[GET ERROR] ->", err);
+          throw err;
+        });
     });
   } //get
 
@@ -279,13 +282,24 @@ class REST {
    * @param {*} _path
    * @param {*} _headers
    */
-  del(_path, _headers) {
+  del(_path, _headers, _retries) {
     return axios({
       method: "delete",
       url: _path,
       headers: _headers || ""
     }).catch(err => {
-      console.log("[DELETE ERROR] ->", err);
+      return handleHTTPError(err)
+        .then(() => {
+          //Error was handled, retry.
+          _retries = _retries == null ? 1 : _retries + 1;
+          if (_retries > 3) throw err;
+          debug("Error handled during DELETE retrying... attempt #" + _retries);
+          return this.del.call(this, _path, _headers, _retries);
+        })
+        .catch(err => {
+          debug("[DELETE ERROR] ->", err);
+          throw err;
+        });
     });
   } //del
 
@@ -296,15 +310,24 @@ class REST {
    * @param {*} data
    */
   put(_path, data) {
-    let self = this;
-
     return axios({
       method: "put",
       data: _data,
       url: _path,
       headers: opts.headers
     }).catch(err => {
-      console.log("[PUT ERROR] ->", err);
+      return this.handleHTTPError(err)
+        .then(() => {
+          //Error was handled, retry.
+          _retries = _retries == null ? 1 : _retries + 1;
+          if (_retries > 3) throw err;
+          debug("Error handled during PUT retrying... attempt #" + _retries);
+          return this.put.call(this, _path, _headers, _data, _retries);
+        })
+        .catch(err => {
+          debug("[PUT ERROR] ->", err);
+          throw err;
+        });
     });
   } //put
 
@@ -316,9 +339,7 @@ class REST {
    * @param {*} _params
    * @param {*} _data
    */
-  post(_path, _headers, _params, _data) {
-    let self = this;
-
+  post(_path, _headers, _params, _data, _retries) {
     return axios({
       method: "post",
       url: _path,
@@ -326,7 +347,25 @@ class REST {
       params: _params,
       headers: _headers || ""
     }).catch(err => {
-      console.log("[POST ERROR] ->", err);
+      return this.handleHTTPError(err)
+        .then(() => {
+          //Error was handled, retry.
+          _retries = _retries == null ? 1 : _retries + 1;
+          if (_retries > 3) throw err;
+          debug("Error handled during POST retrying... attempt #" + _retries);
+          return this.post.call(
+            this,
+            _path,
+            _headers,
+            _params,
+            _data,
+            _retries
+          );
+        })
+        .catch(err => {
+          debug("[POST ERROR] ->", err);
+          throw err;
+        });
     });
   } //post
 
@@ -334,11 +373,8 @@ class REST {
    * includes the Authorization header in the IFT request
    */
   _buildCertificatesHeader() {
-    let self = this;
-    self._certificates_header = {
-      Authorization: "Bearer " + self._ONBOARDING_TOKEN["onboarding_token"]
-    };
-    self._onboarding_token_in_header = true;
+    this._certificates_header["Authorization"] =
+      "Bearer " + this._ONBOARDING_TOKEN["onboarding_token"];
   }
 } //class
 
