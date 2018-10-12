@@ -31,9 +31,12 @@ class REST {
   constructor(param = {}) {
     let self = this;
     self._path = param.path;
-    self._connected = false;
-    self._onboarding_token_in_header = false;
-    self._onboarding_file_name = "./onboarding_token";
+
+    /* Format for IBM Food Trust Identifier Fields */
+    /* Location */
+    /* https://github.com/IBM/IFT-Developer-Zone/wiki/doc-IBMFoodTrust-ID-(identifiers) */
+    /* urn:ibm:ift:location:loc:<Company Prefix>.<Location Reference> */
+    self._location_prefix = "urn:ibm:ift:location:loc:7457934435.gln";
 
     /* oraganization id */
     self._organization_id = param.organization_id || "";
@@ -89,20 +92,31 @@ class REST {
       customFieldList: [
         {
           label: "NA",
-          value: "http://serviopalacios.com/",
+          value: "http://certificateurl/",
           type: "url"
         }
       ]
     };
 
-    self._certificate_id = "";
+    Object.keys(config.certificateTemplate).map(key => {
+      Object.defineProperty(self, key, {
+        get: function() {
+          return self._certificate_template[key];
+        },
+        set: function(value) {
+          //debug("value", value);
+          if (!value) throw new Error("Invalid " + key);
+          self._certificate_template[key] = value;
+        }
+      });
+    });
 
     self._certificate_delete_path_leftover = "/attachments/certificate";
   } //constructor
 
   /**
    * compares FSMS_observed_date and operation_observed_date
-   * it takes the oldest one, then it is stored in .auditStartDate in the IFT schema
+   * it takes the oldest one; then it is stored in .auditStartDate in the IFT schema
    * @param {*} first
    * @param {*} second
    */
@@ -130,13 +144,14 @@ class REST {
    * maps the primusgfs format to IFT data model
    * @param {*} _audit primusgfs format
    * @param {*} _certificate primusgfs format
+   * @param {string} [_analytics_url] - url to analytics website (optional)
    */
-  _mapOada2Hyperledger(_audit, _certificate) {
+  _mapOada2Hyperledger(_audit, _certificate, _analytics_url) {
     let self = this;
     let gln = [];
     /* required field (*) */
-    self._certificate_template.addendumsComments = _audit._id;
-    self._certificate_template.auditStartDate = self._compareDates(
+    _certificate_template.addendumsComments = _audit._id;
+    _certificate_template.auditStartDate = self._compareDates(
       //(*)
       _audit.conditions_during_audit.FSMS_observed_date,
       _audit.conditions_during_audit.operation_observed_date
@@ -163,9 +178,8 @@ class REST {
     self._certificate_template.locationGLNList = gln; //(*)
 
     /* customFieldList */
-    self._certificate_template.customFieldList[0].value = _certificate._meta
-      .analytics_url
-      ? _certificate._meta.analytics_url
+    self._certificate_template.customFieldList[0].value = _analytics_url
+      ? _analytics_url
       : self._certificate_template.customFieldList[0].value;
 
     return self._certificate_template;
@@ -232,7 +246,7 @@ class REST {
   } //connect
 
   clearToken() {
-    this._ONBOARDING_TOKEN = null;
+    _ONBOARDING_TOKEN = null;
   }
 
   /**
@@ -309,7 +323,7 @@ class REST {
    * @param {*} path
    * @param {*} data
    */
-  put(_path, data) {
+  put(_path, _data) {
     return axios({
       method: "put",
       data: _data,
