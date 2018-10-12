@@ -57,3 +57,7 @@ return ift
     );
   });
 ```
+
+## Talks
+
+[Trellisfw-IBM Food Trust Presentation Slides](./assets/talks/servio-palacios-ift.pdf)
